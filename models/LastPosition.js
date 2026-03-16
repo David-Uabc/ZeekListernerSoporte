@@ -2,47 +2,47 @@
 const mongoose = require('mongoose');
 
 /**
-  Collection: lastpositions
- 
- Un unico documento por vehiculo.
- Se sobreescribe completo cada vez que llega una senal nueva.
- Upsert por unidadId — si no existe lo crea, si existe lo actualiza.
+ * Collection: lastpositions
+ * ─────────────────────────────────────────────────────────────
+ * Un unico documento por vehiculo.
+ * Se sobreescribe completo cada vez que llega una senal nueva.
+ * Upsert por unidadId — si no existe lo crea, si existe lo actualiza.
  */
 const lastPositionSchema = new mongoose.Schema({
 
-  //  Identificacion 
+  // ── Identificacion ─────────────────────────────────────────
   unidadId:             { type: String,  required: true, unique: true },
 
-  //  Fechas 
+  // ── Fechas ─────────────────────────────────────────────────
   fechaHoraUbicacion:   { type: Date },
   fechaHoraRecepcion:   { type: Date },
 
-  //  Posicion 
+  // ── Posicion ───────────────────────────────────────────────
   latitud:              { type: Number },
   longitud:             { type: Number },
   altitud:              { type: Number },
   orientacion:          { type: Number },
   velocidad:            { type: Number },
 
-  //  Satelites y Fix 
+  // ── Satelites y Fix ────────────────────────────────────────
   satelites:            { type: Number },
   fix:                  { type: Boolean },
 
-  //  Conexion 
+  // ── Conexion ───────────────────────────────────────────────
   ip:                   { type: String },
   puerto:               { type: Number },
   protocolo:            { type: String, enum: ['TCP', 'UDP', 'API'] },
   tramaTiempoReal:      { type: Boolean },
   estadoGPRS:           { type: String, enum: ['Ok', 'Sin conexion'] },
 
-  //  Dispositivo GPS 
+  // ── Dispositivo GPS ────────────────────────────────────────
   gpsMarca:             { type: String },
   tipoReporte:          { type: String, enum: ['GPS', 'Giro', 'Alerta'] },
   evento:               { type: String },
   eventoId:             { type: String },
   numeroSecuencia:      { type: Number },
 
-  //  Motor y bateria 
+  // ── Motor y bateria ────────────────────────────────────────
   estadoIgnicion:       { type: String, enum: ['Encendido', 'Apagado'] },
   estadoApagadoMotor:   { type: String, enum: ['Aplicado', 'No aplicado'] },
   horometro:            { type: Number },
@@ -50,7 +50,7 @@ const lastPositionSchema = new mongoose.Schema({
   voltajeBateria:       { type: Number },
   porcBateriaInterna:   { type: Number },
 
-  //  Senal celular
+  // ── Senal celular ──────────────────────────────────────────
   potencia:             { type: Number },
   nivelRecepcion:       { type: String, enum: ['Excelente', 'Muy bueno', 'Regular', 'Malo', 'Deficiente', 'Desconocido'] },
   idRadioBase:          { type: String },
@@ -60,7 +60,7 @@ const lastPositionSchema = new mongoose.Schema({
   mnc:                  { type: String },
   carrier:              { type: String },
 
-  //  Sensores embebidos (ultima lectura) 
+  // ── Sensores embebidos (ultima lectura) ────────────────────
   // Solo se guardan los tanques que vienen en la trama
   combustible: [{
     tanque: { type: String, enum: ['Tanque 1', 'Tanque 2', 'Tanque 3', 'Tanque 4'] },

@@ -123,6 +123,9 @@ function buildDocument(fields, remoteInfo) {
     combustible,
     temperatura,
     humedad,
+
+    // Trama cruda completa — para el apartado de logs en el frontend
+    trama: fields.join(';'),
   };
 }
 
@@ -132,6 +135,7 @@ function buildDocument(fields, remoteInfo) {
 async function saveLocation(fields, remoteInfo) {
   try {
     // Construimos el documento a guardar
+    // buildDocument incluye el campo trama con la trama cruda reconstruida
     const doc = buildDocument(fields, remoteInfo);
 
     // Guardamos en paralelo en ambas colecciones para ser mas rapidos
@@ -139,6 +143,7 @@ async function saveLocation(fields, remoteInfo) {
     await Promise.all([
 
       // INSERT en historial — siempre crea un documento nuevo
+      // incluye el campo trama para el apartado de logs en el frontend
       HistoryPosition.create(doc),
 
       // UPSERT en ultima posicion — crea si no existe, actualiza si existe
