@@ -135,20 +135,15 @@ function buildDocument(fields, remoteInfo) {
 async function saveLocation(fields, remoteInfo) {
   try {
     // Construimos el documento a guardar
-    // buildDocument incluye el campo trama con la trama cruda reconstruida
     const doc = buildDocument(fields, remoteInfo);
 
     // Guardamos en paralelo en ambas colecciones para ser mas rapidos
-    // Promise.all espera que ambas operaciones terminen antes de continuar
     await Promise.all([
 
       // INSERT en historial — siempre crea un documento nuevo
-      // incluye el campo trama para el apartado de logs en el frontend
       HistoryPosition.create(doc),
 
       // UPSERT en ultima posicion — crea si no existe, actualiza si existe
-      // $set reemplaza todos los campos con los valores nuevos
-      // sin $set MongoDB acumula los arreglos de sensores en lugar de reemplazarlos
       LastPosition.findOneAndUpdate(
         { unidadId: doc.unidadId },
         { $set: doc },

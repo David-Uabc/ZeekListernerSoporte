@@ -1,88 +1,119 @@
-// TEST 3 — Anti-colapso
-// Manda 1000 tramas al mismo tiempo para demostrar que la cola funciona
-// Si el servidor no colapsa y MongoDB guarda todos los documentos = exito
+// TEST 7 — Tramas como JSON real
+// Simula exactamente como llegan los paquetes reales del servidor
+// Cada trama viene envuelta en un JSON con el campo Identificar
+// que le dice al listener de que marca es el dispositivo
 // Resultado esperado:
-//   historypositions → ~1000 documentos
-//   lastpositions    → 5 documentos (uno por vehiculo)
+//   historypositions → 10 documentos (5 Suntech + 5 Ruptela)
+//   lastpositions    → 10 documentos (5 Suntech + 5 Ruptela)
 
 const dgram = require('dgram');
 const client = dgram.createSocket('udp4');
 
-const HOST  = '127.0.0.1';
-const PORT  = 5001;
-const TOTAL = 1000;
+const HOST = '127.0.0.1';
+const PORT = 5001;
 
-// Simulamos 5 vehiculos en diferentes ciudades de Baja California
-const VEHICULOS = [
-  { id: '0740005757', lat: 32.5137, lon: -116.8736, ciudad: 'Tijuana'  },
-  { id: '0740005758', lat: 32.3300, lon: -117.0600, ciudad: 'Rosarito' },
-  { id: '0740005759', lat: 31.8600, lon: -116.6000, ciudad: 'Ensenada' },
-  { id: '0740005760', lat: 32.6638, lon: -115.4680, ciudad: 'Mexicali' },
-  { id: '0740005761', lat: 32.5735, lon: -116.6270, ciudad: 'Tecate'   },
+const paquetes = [
+
+  // ── SUNTECH — Identificar: "STUniversal" ──────────────────
+  {
+    NBytes: 207,
+    EndPoint: '200.68.158.109:8718',
+    Trama: 'STT;0740005757;3FFFFF;74;1.0.6;1;20260309;10:00:00;052CC722;334;20;2B24;55;+32.513706;-116.873611;85.50;45.00;14;1;00000001;00000000;0;1;2462;12.36;4.1;17005812;48463;FUEL;1;80;FUEL;2;65;TEMP;1;23.5;HUM;1;65',
+    Identificar: 'STUniversal',
+    UnidadID: '',
+  },
+  {
+    NBytes: 197,
+    EndPoint: '200.68.158.109:8718',
+    Trama: 'STT;0740005758;3FFFFF;74;1.0.6;1;20260309;10:01:00;052CC722;334;20;2B24;48;+32.330000;-117.060000;60.00;270.00;12;1;00000001;00000000;0;1;1001;11.90;3.9;5000000;20000;FUEL;1;90;TEMP;1;22.0;HUM;1;60',
+    Identificar: 'STUniversal',
+    UnidadID: '',
+  },
+  {
+    NBytes: 194,
+    EndPoint: '200.68.158.109:8718',
+    Trama: 'STT;0740005759;3FFFFF;74;1.0.6;1;20260309;10:02:00;052CC722;334;30;2B24;20;+31.860000;-116.600000;0.00;0.00;14;1;00000000;00000001;0;1;3001;12.50;4.1;8000000;30000;FUEL;1;45;TEMP;1;20.5;HUM;1;70',
+    Identificar: 'STUniversal',
+    UnidadID: '',
+  },
+  {
+    NBytes: 208,
+    EndPoint: '200.68.158.109:8718',
+    Trama: 'STT;0740005760;3FFFFF;74;1.0.6;1;20260309;10:03:00;052CC722;334;50;2B24;55;+32.663800;-115.468000;100.00;90.00;14;1;00000001;00000000;0;1;4001;12.36;4.1;12000000;45000;FUEL;1;60;FUEL;2;55;TEMP;1;35.0;HUM;1;30',
+    Identificar: 'STUniversal',
+    UnidadID: '',
+  },
+  {
+    NBytes: 197,
+    EndPoint: '200.68.158.109:8718',
+    Trama: 'STT;0740005761;3FFFFF;74;1.0.6;1;20260309;10:04:00;052CC722;334;20;2B24;15;+32.573500;-116.627000;30.00;180.00;10;1;00000001;00000000;0;1;5001;11.50;3.8;3000000;10000;FUEL;1;70;TEMP;1;24.0;HUM;1;55',
+    Identificar: 'STUniversal',
+    UnidadID: '',
+  },
+
+  // ── RUPTELA — Identificar: "Ruptela" ──────────────────────
+  {
+    NBytes: 84,
+    EndPoint: '200.68.158.110:5001',
+    Trama: '005400030E80479C687A44000169B76783000000BA57B7071360311D08B32D8217000005000708000200000300000400000500001B1900A90001950102FA0A02001D30F3001E107A0200410038F0D40096000518C4007EA6',
+    Identificar: 'Ruptela',
+    UnidadID: '',
+  },
+  {
+    NBytes: 84,
+    EndPoint: '200.68.158.110:5001',
+    Trama: '005400030E80479C687B44000169B76783000000BA57B7071360311D08B32D8217000005000708000200000300000400000500001B1900A90001950102FA0A02001D30F3001E107A0200410038F0D40096000518C4007EA6',
+    Identificar: 'Ruptela',
+    UnidadID: '',
+  },
+  {
+    NBytes: 84,
+    EndPoint: '200.68.158.110:5001',
+    Trama: '005400030E80479C687C44000169B76783000000BA57B7071360311D08B32D8217000005000708000200000300000400000500001B1900A90001950102FA0A02001D30F3001E107A0200410038F0D40096000518C4007EA6',
+    Identificar: 'Ruptela',
+    UnidadID: '',
+  },
+  {
+    NBytes: 84,
+    EndPoint: '200.68.158.110:5001',
+    Trama: '005400030E80479C687D44000169B76783000000BA57B7071360311D08B32D8217000005000708000200000300000400000500001B1900A90001950102FA0A02001D30F3001E107A0200410038F0D40096000518C4007EA6',
+    Identificar: 'Ruptela',
+    UnidadID: '',
+  },
+  {
+    NBytes: 84,
+    EndPoint: '200.68.158.110:5001',
+    Trama: '005400030E80479C687E44000169B76783000000BA57B7071360311D08B32D8217000005000708000200000300000400000500001B1900A90001950102FA0A02001D30F3001E107A0200410038F0D40096000518C4007EA6',
+    Identificar: 'Ruptela',
+    UnidadID: '',
+  },
 ];
 
-// Genera una trama con datos unicos por indice
-// Cada trama tiene hora diferente para que no sea detectada como duplicado
-function generarTrama(vehiculo, indice) {
-  const lat     = (vehiculo.lat + (Math.random() * 0.01 - 0.005)).toFixed(6);
-  const lon     = (vehiculo.lon + (Math.random() * 0.01 - 0.005)).toFixed(6);
-  const speed   = (Math.random() * 120).toFixed(2);
-  const heading = (Math.random() * 359).toFixed(2);
-  const ignicion = Math.random() > 0.3 ? '00000001' : '00000000';
-  const fuel1   = Math.floor(Math.random() * 90 + 10);
-  const fuel2   = Math.floor(Math.random() * 90 + 10);
-  const temp1   = (Math.random() * 25 + 15).toFixed(1);
-  const hum1    = Math.floor(Math.random() * 50 + 40);
-  const seq     = 2000 + indice;
+console.log('\n  TEST 7 — Tramas como JSON real');
+console.log('  5 Suntech (Identificar: STUniversal)');
+console.log('  5 Ruptela (Identificar: Ruptela)');
+console.log('  El listener lee el campo Identificar y usa el parser correcto\n');
 
-  // Generamos hora unica por indice — HH:MM:SS
-  // indice 0 = 00:00:00, indice 1 = 00:00:01, etc.
-  const horas   = String(Math.floor(indice / 3600) % 24).padStart(2, '0');
-  const minutos = String(Math.floor(indice / 60) % 60).padStart(2, '0');
-  const segundos = String(indice % 60).padStart(2, '0');
-  const hora    = `${horas}:${minutos}:${segundos}`;
-
-  return `STT;${vehiculo.id};3FFFFF;74;1.0.6;1;20260309;${hora};052CC722;334;20;2B24;55;+${lat};${lon};${speed};${heading};14;1;${ignicion};00000000;0;1;${seq};12.36;4.1;17005812;48463;FUEL;1;${fuel1};FUEL;2;${fuel2};TEMP;1;${temp1};HUM;1;${hum1}`;
-}
-
-let enviadas = 0;
-let errores  = 0;
-const inicio = Date.now();
-
-console.log('\n  TEST 3 — Anti-colapso');
-console.log(`  Enviando ${TOTAL} tramas con 10ms de diferencia`);
-console.log('  Cada trama tiene hora unica para evitar filtro de duplicados\n');
-
-for (let i = 0; i < TOTAL; i++) {
+paquetes.forEach((paquete, index) => {
   setTimeout(() => {
-    const vehiculo = VEHICULOS[i % VEHICULOS.length];
-    const trama    = generarTrama(vehiculo, i);
-    const msg      = Buffer.from(trama);
+
+    // Convertimos el objeto a JSON igual que lo mandaria el servidor real
+    const msg = Buffer.from(JSON.stringify(paquete));
 
     client.send(msg, PORT, HOST, (err) => {
       if (err) {
-        errores++;
-        console.error(`  [ERROR] Trama ${i + 1}: ${err.message}`);
+        console.error(`  [ERROR] Paquete ${index + 1}: ${err.message}`);
       } else {
-        enviadas++;
-        if (enviadas % 200 === 0) {
-          const tiempo = ((Date.now() - inicio) / 1000).toFixed(1);
-          console.log(`  [SENT]  ${enviadas}/${TOTAL} tramas — ${tiempo}s`);
-        }
+        console.log(`  [SENT]  Paquete ${index + 1}/10 — ${paquete.Identificar}`);
       }
 
-      if (enviadas + errores === TOTAL) {
-        const tiempoTotal = ((Date.now() - inicio) / 1000).toFixed(1);
-        console.log('  RESULTADO');
-        console.log(`  Enviadas  : ${enviadas}`);
-        console.log(`  Errores   : ${errores}`);
-        console.log(`  Tiempo    : ${tiempoTotal}s`);
-        console.log(`  Velocidad : ${(enviadas / tiempoTotal).toFixed(0)} tramas/seg`);
-        console.log('  Verifica en MongoDB Compass:');
-        console.log(`  historypositions → ~${TOTAL} documentos`);
-        console.log('  lastpositions    → 5 documentos');
-         client.close();
+      if (index === paquetes.length - 1) {
+        console.log('\n  Listo. Verifica en MongoDB Compass:');
+        console.log('  historypositions → 10 documentos');
+        console.log('  lastpositions    → 10 documentos');
+        console.log('  gpsMarca         → mezcla de "Suntech" y "Ruptela"');
+        client.close();
       }
     });
-  }, i * 10);
-}
+  }, index * 500);
+});
