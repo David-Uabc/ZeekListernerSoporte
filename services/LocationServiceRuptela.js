@@ -20,10 +20,20 @@ const TECHNOLOGIES = {
   10: 'CAT1/CAT4',
 };
 
+// El valor 65535 significa que el sensor no tiene lectura — se guarda como null
+// El valor 0 si es un valor valido en lecturas de sensores
+const NULL_VALUE_16 = 65535;
+
+// Codigos de error para sensores del Scan  rangos que indican lectura invalida
+// Si el valor cae en estos rangos se guarda como null
+const SCAN_ERROR_RANGE_16  = (v) => v >= 65024 && v <= 65279;   // error en sensores de 2 bytes // TemAmbiente,RendiCombus,rpm, VelociCan
+const SCAN_ERROR_RANGE_32  = (v) => v >= 4261412864 && v <= 4278190079; // error en sensores de 4 bytes // odometro y horometro
+const SCAN_ERROR_BYTE      = (v) => v === 254; // error en sensores de 1 byte // anticongelante, posicionAcelerador y nivel de combustible
+
 // Traduce el nivel de señal del IOID 27 a palabras en español
 // Ruptela usa una escala del 0 al 31 — diferente a Suntech
 function getSignalLevel(value) {
-  if (value === 31)              return 'Excelente';
+  if (value === 31)               return 'Excelente';
   if (value >= 20 && value <= 30) return 'Muy bueno';
   if (value >= 10 && value <= 19) return 'Regular';
   if (value >= 2  && value <= 9)  return 'Malo';
@@ -45,6 +55,12 @@ function hexToCoordinate(hex) {
   const unsigned = parseInt(hex, 16); // Convertimos el texto hexadecimal a un numero entero sin signo // ejemplo: "BA57B707" se convierte en 3126683399
   const signed   = unsigned > 0x7FFFFFFF ? unsigned - 4294967296 : unsigned;//  // Revisamos si el numero es mayor a 2,147,483,647 que es el maximo de un numero positivo de 4 bytes 
   return signed / 10000000;/// Dividimos entre 10,000,000 para convertir el numero entero a grados decimales
+}
+
+// Verifica si un valor es nulo segun el protocolo Ruptela
+// 65535 significa que el accesorio no tiene lectura disponible
+function isNullValue(value) {
+  return value === NULL_VALUE_16;
 }
 
 function parseIOIDs(buf, offset) {
@@ -83,17 +99,145 @@ function parseIOIDs(buf, offset) {
   return ios;  //Regresamos el diccionario completo con todos  los sensores
 }
 
+// Extrae los sensores de combustible Bluetooth de los IOIDs 779 al 782
+// Si el valor es 65535 significa que el tanque no tiene lectura  se guarda como null
+function parseFuel(ios) {
+  const tanques = [
+    { ioid: 779, tanque: 'Tanque 1' },
+    { ioid: 780, tanque: 'Tanque 2' },
+    { ioid: 781, tanque: 'Tanque 3' },
+    { ioid: 782, tanque: 'Tanque 4' },
+  ];
+
+  return tanques
+    // Solo incluimos los tanques que vienen en la trama
+    .filter(t => ios[t.ioid] != null)
+    // Si el valor es 65535 es nulo  no lo incluimos
+    .filter(t => !isNullValue(ios[t.ioid]))
+    .map(t => ({ tanque: t.tanque, valor: ios[t.ioid] }));
+}
+
+// Extrae los sensores de temperatura Bluetooth de los IOIDs 600 al 603
+// El valor final se divide entre 10 para obtener grados centigrados
+// Si el valor es 65535 significa que el sensor no tiene lectura  se guarda como null
+function parseTemperature(ios) {
+  const sensores = [
+    { ioid: 600, sensor: 'Temp 1' },
+    { ioid: 601, sensor: 'Temp 2' },
+    { ioid: 602, sensor: 'Temp 3' },
+    { ioid: 603, sensor: 'Temp 4' },
+  ];
+
+  return sensores
+    // Solo incluimos los sensores que vienen en la trama
+    .filter(s => ios[s.ioid] != null)
+    // Si el valor es 65535 es nulo — no lo incluimos
+    .filter(s => !isNullValue(ios[s.ioid]))
+    // Dividimos entre 10 para obtener grados centigrados reales
+    .map(s => ({ sensor: s.sensor, valor: ios[s.ioid] / 10 }));
+}
+
+// Extrae los sensores de humedad Bluetooth de los IOIDs 605 al 608
+// El valor final se divide entre 10 para obtener el porcentaje real
+// Si el valor es 65535 significa que el sensor no tiene lectura  se guarda como null
+function parseHumidity(ios) {
+  const sensores = [
+    { ioid: 605, sensor: 'Hum 1' },
+    { ioid: 606, sensor: 'Hum 2' },
+    { ioid: 607, sensor: 'Hum 3' },
+    { ioid: 608, sensor: 'Hum 4' },
+  ];
+
+  return sensores
+    // Solo incluimos los sensores que vienen en la trama
+    .filter(s => ios[s.ioid] != null)
+    // Si el valor es 65535 es nulo — no lo incluimos
+    .filter(s => !isNullValue(ios[s.ioid]))
+    // Dividimos entre 10 para obtener el porcentaje real
+    .map(s => ({ sensor: s.sensor, valor: ios[s.ioid] / 10 }));
+}
+
+// Extrae los parametros del Scan (OBD/CAN) del vehiculo
+// Cada parametro tiene su propia formula de conversion y su propio codigo de error
+// Si el valor cae en el rango de error se guarda como null
+function parseScan(ios) {
+  const scan = {};
+
+  // IOID 89  Temperatura ambiente en grados centigrados
+  // Rango de error: 65024 al 65279
+  // Formula: (valor * 0.03125) - 273
+  if (ios[89] != null && !SCAN_ERROR_RANGE_16(ios[89])) {
+    scan.temperaturaAmbiente = parseFloat(((ios[89] * 0.03125) - 273).toFixed(2));
+  }
+  // IOID 90  Rendimiento de combustible en km/L
+  // Rango de error: 65024 al 65279
+  // Formula: valor * (1 / 512)
+  if (ios[90] != null && !SCAN_ERROR_RANGE_16(ios[90])) {
+    scan.rendimientoCombustible = parseFloat((ios[90] * (1 / 512)).toFixed(3));
+  }
+
+  // IOID 114  Odometro en metros
+  // Rango de error: 4261412864 al 4278190079
+  // Formula: valor * 5
+  if (ios[114] != null && !SCAN_ERROR_RANGE_32(ios[114])) {
+    scan.odometro = ios[114] * 5;
+  }
+
+  // IOID 115  Temperatura del anticongelante en grados centigrados
+  // Codigo de error: 254
+  // No requiere formula de conversion
+  if (ios[115] != null && !SCAN_ERROR_BYTE(ios[115])) {
+    scan.temperaturaAnticongelante = ios[115];
+  }
+
+  // IOID 197  Revoluciones por minuto
+  // Rango de error: 65024 al 65279
+  // Formula: valor * 0.125
+  if (ios[197] != null && !SCAN_ERROR_RANGE_16(ios[197])) {
+    scan.rpm = parseFloat((ios[197] * 0.125).toFixed(1));
+  }
+
+  // IOID 203  Horometro en horas
+  // Rango de error: 4261412864 al 4278190079
+  // Formula: (valor * 0.05) * 3600
+  if (ios[203] != null && !SCAN_ERROR_RANGE_32(ios[203])) {
+    scan.horometro = parseFloat(((ios[203] * 0.05) * 3600).toFixed(2));
+  }
+
+  // IOID 206  Posicion del acelerador en porcentaje
+  // Codigo de error: 254
+  // Formula: valor * 0.4
+  if (ios[206] != null && !SCAN_ERROR_BYTE(ios[206])) {
+    scan.posicionAcelerador = parseFloat((ios[206] * 0.4).toFixed(1));
+  }
+
+  // IOID 207  Nivel de combustible en porcentaje
+  // Codigo de error: 254
+  // Formula: valor * 0.4
+  if (ios[207] != null && !SCAN_ERROR_BYTE(ios[207])) {
+    scan.nivelCombustible = parseFloat((ios[207] * 0.4).toFixed(1));
+  }
+
+  // IOID 210  Velocidad en km/h
+  // Rango de error: 65024 al 65279
+  // Formula: valor * (1 / 256)
+  if (ios[210] != null && !SCAN_ERROR_RANGE_16(ios[210])) {
+    scan.velocidadCAN = parseFloat((ios[210] * (1 / 256)).toFixed(2));
+  }
+
+  return scan;
+}
 
 function buildDocument(rawHex, remoteInfo) {
 
   const buf = Buffer.from(rawHex.trim(), 'hex');  // Convertimos el texto hexadecimal a bytes reales en memoria sin esto no podriamos leer posicion por posicion
 
   const imeiHex  = buf.slice(2, 10).toString('hex').toUpperCase();  // Cortamos los bytes del 2 al 9 que son donde vive el IMEI en la trama, el slide es para cortar los  bytes
-  const imeiDec  = BigInt('0x' + imeiHex).toString();// Convertimos el IMEI de hexadecimal a numero decimal usamosn bigint para que java no los dedonde los digitos
+  const imeiDec  = BigInt('0x' + imeiHex).toString();// Convertimos el IMEI de hexadecimal a numero decimal usamos bigint para que JavaScript no redondee los digitos
   const unidadId = `${imeiDec}ru`;  // Agregamos "ru" al final para identificar que este vehiculo es un dispositivo Ruptela
   const inBuffer = buf.readUInt8(11) === 1;  // Leemos el byte 11 que nos dice si la trama venia guardada en la memoria del dispositivo
   const timestamp = buf.readUInt32BE(13);  // Leemos los bytes 13 al 16 que son los segundos transcurridos desde el 1 de enero de 1970
-  const fechaHoraUbicacion = new Date(timestamp * 1000);  // Multiplicamos por 1000 para convertir de segundos a milisegundos est o lo hago por que javascript los necesita en milis para que este su pueda guardar en mongo
+  const fechaHoraUbicacion = new Date(timestamp * 1000);  // Multiplicamos por 1000 para convertir de segundos a milisegundos esto lo hago porque javascript los necesita en milis para que se pueda guardar en mongo
 
   // Coordenadas 
   const longitud = hexToCoordinate(buf.slice(20, 24).toString('hex')); // Los bytes 20 al 23 son la longitud  los cortamos y los convertimos a grados decimales
@@ -114,6 +258,16 @@ function buildDocument(rawHex, remoteInfo) {
   const carrier = carrierRaw ? (CARRIERS[carrierRaw] || null) : null;// Buscamos el numero en nuestra tabla de carriers para obtener el nombre del operador
   const mcc = carrierRaw ? carrierRaw.slice(0, 3) : null;// Los primeros 3 digitos son el MCC  codigo del pais, ejemplo: 334 = Mexico
   const mnc = carrierRaw ? carrierRaw.slice(3)    : null;// Los digitos restantes son el MNC  codigo del operador, ejemplo: 020 = Telcel
+
+  // Extraemos los sensores Bluetooth — combustible, temperatura y humedad
+  // Cada funcion revisa sus IOIDs y filtra los valores nulos (65535)
+  const combustible = parseFuel(ios);
+  const temperatura = parseTemperature(ios);
+  const humedad     = parseHumidity(ios);
+
+  // Extraemos los parametros del Scan (OBD/CAN) del vehiculo
+  // Solo se incluyen los que vienen en la trama y no tienen codigo de error
+  const scan = parseScan(ios);
 
   // Construimos y regresamos el documento con el mismo formato que Suntech
   return {
@@ -157,8 +311,10 @@ function buildDocument(rawHex, remoteInfo) {
     // Motor y bateria
     estadoIgnicion:     ignicion,
     estadoApagadoMotor: motorCortado,
-    horometro:          null,
-    odometro,
+    // Si el Scan tiene horometro lo usamos — si no queda null
+    horometro:          scan.horometro ?? null,
+    // Si el Scan tiene odometro lo usamos — si no usamos el IOID 65
+    odometro:           scan.odometro ?? odometro,
     voltajeBateria,
     porcBateriaInterna,
 
@@ -172,18 +328,22 @@ function buildDocument(rawHex, remoteInfo) {
     mnc,
     carrier,
 
-    // Sensores embebidos  se agregaran cuando lleguen los IOIDs de combustible,
-    // temperatura y humedad de Ruptela
-    combustible: [],
-    temperatura:  [],
-    humedad:      [],
+    // Sensores Bluetooth — combustible, temperatura y humedad
+    // Solo se guardan los que vienen en la trama y no tienen valor nulo (65535)
+    combustible,
+    temperatura,
+    humedad,
+
+    // Parametros del Scan (OBD/CAN) — solo los que vienen y no tienen codigo de error
+    // Se guardan como objeto separado para que el frontend los pueda mostrar
+    scan: Object.keys(scan).length > 0 ? scan : null,
 
     // Trama cruda completa  para el apartado de logs en el frontend
     trama: rawHex.trim(),
   };
 }
 
-// Funcion principal  guarda en historypositions y lastpositions
+// Funcion principal — guarda en historypositions y lastpositions
 // Mismas colecciones que Suntech, mismo formato de documento
 // Nombre cambiado de saveLocationRuptela a saveLocation
 // para que todos los parsers expongan la misma interfaz

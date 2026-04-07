@@ -1,35 +1,28 @@
 // Importamos mongoose para definir el schema de la coleccion
 const mongoose = require('mongoose');
 
-/**
- * Collection: historypositions
- * ─────────────────────────────────────────────────────────────
- * Un documento nuevo por cada senal recibida.
- * Nunca se modifica ni se elimina.
- * Los sensores van embebidos como arreglos dentro del documento.
- */
 const historyPositionSchema = new mongoose.Schema({
 
-  // ── Identificacion ─────────────────────────────────────────
+  // ── Identificacion 
   unidadId:             { type: String,  required: true },
 
-  // ── Fechas ─────────────────────────────────────────────────
+  // ── Fechas 
   fechaHoraUbicacion:   { type: Date },
   fechaHoraRecepcion:   { type: Date },
 
-  // ── Posicion ───────────────────────────────────────────────
+  // ── Posicion 
   latitud:              { type: Number },
   longitud:             { type: Number },
   altitud:              { type: Number },
   orientacion:          { type: Number },
   velocidad:            { type: Number },
 
-  // ── Satelites y Fix ────────────────────────────────────────
+  // ── Satelites y Fix 
   satelites:            { type: Number },
   // fix como booleano — true = Fix OK, false = No fix
   fix:                  { type: Boolean },
 
-  // ── Conexion ───────────────────────────────────────────────
+  // ── Conexion 
   ip:                   { type: String },
   puerto:               { type: Number },
   protocolo:            { type: String, enum: ['TCP', 'UDP', 'API'] },
@@ -37,14 +30,14 @@ const historyPositionSchema = new mongoose.Schema({
   tramaTiempoReal:      { type: Boolean },
   estadoGPRS:           { type: String, enum: ['Ok', 'Sin conexion'] },
 
-  // ── Dispositivo GPS ────────────────────────────────────────
+  // ── Dispositivo GPS 
   gpsMarca:             { type: String },
   tipoReporte:          { type: String, enum: ['GPS', 'Giro', 'Alerta'] },
   evento:               { type: String },
   eventoId:             { type: String },
   numeroSecuencias:     { type: Number },
 
-  // ── Motor y bateria ────────────────────────────────────────
+  // ── Motor y bateria 
   estadoIgnicion:       { type: String, enum: ['Encendido', 'Apagado'] },
   estadoApagadoMotor:   { type: String, enum: ['Aplicado', 'No aplicado'] },
   horometro:            { type: Number },
@@ -52,7 +45,7 @@ const historyPositionSchema = new mongoose.Schema({
   voltajeBateria:       { type: Number },
   porcBateriaInterna:   { type: Number },
 
-  // ── Senal celular ──────────────────────────────────────────
+  // ── Senal celular 
   potencia:             { type: Number },
   nivelRecepcion:       { type: String, enum: ['Excelente', 'Muy bueno', 'Regular', 'Malo', 'Deficiente', 'Desconocido'] },
   idRadioBase:          { type: String },
@@ -65,7 +58,21 @@ const historyPositionSchema = new mongoose.Schema({
   // Trama cruda completa tal como llego del GPS — para el apartado de logs
   trama: { type: String },
 
-  // ── Sensores embebidos ─────────────────────────────────────
+  // Parametros del Scan (OBD/CAN) — solo se guardan si vienen en la trama
+  // incluye temperatura ambiente, RPM, horometro, odometro, acelerador, combustible y velocidad CAN
+  scan: {
+    temperaturaAmbiente:      { type: Number },
+    rendimientoCombustible:   { type: Number },
+    odometro:                 { type: Number },
+    temperaturaAnticongelante:{ type: Number },
+    rpm:                      { type: Number },
+    horometro:                { type: Number },
+    posicionAcelerador:       { type: Number },
+    nivelCombustible:         { type: Number },
+    velocidadCAN:             { type: Number },
+  },
+
+  // ── Sensores embebidos 
   // Arreglo de tanques de combustible — solo los que vienen en la trama
   combustible: [{
     tanque: { type: String, enum: ['Tanque 1', 'Tanque 2', 'Tanque 3', 'Tanque 4'] },
