@@ -1,11 +1,8 @@
-// Importamos los modelos que definen las colecciones en MongoDB
 const HistoryPosition = require('../models/HistoryPosition');
 const LastPosition    = require('../models/LastPosition');
 
-// Tablas de busqueda para traducir valores de la trama al formato de la BD
 const CARRIERS = { '20': 'Telcel', '30': 'Movistar', '50': 'AT&T' };
 
-// Calcula el nivel de recepcion en español a partir del RSSI
 function getNivelRecepcion(rssi) {
   if (rssi >= 20) return 'Excelente';
   if (rssi >= 15) return 'Muy bueno';
@@ -27,7 +24,6 @@ function parseSensors(sensorFields) {
     const number = sensorFields[i + 1]?.trim();
     const value  = parseFloat(sensorFields[i + 2]?.trim());
 
-    // Saltamos el grupo si le falta algun dato o el valor no es numero
     if (!type || !number || isNaN(value)) continue;
 
     if (type === 'FUEL') {
@@ -42,33 +38,55 @@ function parseSensors(sensorFields) {
   return { combustible, temperatura, humedad };
 }
 
-// Construye el documento a guardar a partir de la trama parseada y el remoteInfo
-// remoteInfo contiene la IP y puerto de donde llego la trama
-function buildDocument(fields, remoteInfo) {
+// Estructura Suntech Universal — 28 campos fijos separados por ";"
+// Índices:
+//  0  tipo reporte   (STT/ALT)
+//  1  deviceId
+//  2  config props
+//  3  modelo
+//  4  fw version
+//  5  tiempo real    (1=si, 0=no)
+//  6  fecha          YYYYMMDD
+//  7  hora           HH:MM:SS UTC
+//  8  cell id
+//  9  mcc
+// 10  mnc
+// 11  lac
+// 12  rssi
+// 13  latitud
+// 14  longitud
+// 15  velocidad
+// 16  orientacion
+// 17  satelites
+// 18  fix            (1=si, 0=no)
+// 19  input status   binario — bit0 = ignicion
+// 20  output status  binario — bit0 = corte motor
+// 21  perfil operacion
+// 22  tipo reporte num
+// 23  num secuencia
+// 24  voltaje externo
+// 25  voltaje interno
+// 26  odometro
+// 27  horometro
+// 28+ sensores opcionales (FUEL/TEMP/HUM en grupos de 3)
 
-  // Los primeros 28 son campos fijos de la trama Suntech Universal
+function buildDocument(fields, remoteInfo) {
   const f = fields;
 
-  // Construimos la fecha y hora de ubicacion a partir de date y time de la trama
-  // La trama manda la fecha como YYYYMMDD y la hora como HH:MM:SS en UTC
-  const dateStr = f[6]?.trim(); // YYYYMMDD
-  const timeStr = f[7]?.trim(); // HH:MM:SS
+  const dateStr = f[6]?.trim();
+  const timeStr = f[7]?.trim();
   const fechaHoraUbicacion = dateStr && timeStr
     ? new Date(`${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}T${timeStr}Z`)
     : null;
 
-  // El bit0 de inputStatus indica si la ignicion esta encendida
-  // parseInt con base 2 convierte el binario "00000001" a numero entero
   const inputBits  = parseInt(f[19]?.trim() || '0', 2);
   const outputBits = parseInt(f[20]?.trim() || '0', 2);
 
-  // Parseamos los sensores que vienen despues del campo [27]
-  const sensorFields            = fields.slice(28);
+  const sensorFields = fields.slice(28);
   const { combustible, temperatura, humedad } = parseSensors(sensorFields);
 
-  // Construimos y regresamos el documento completo
   return {
-    // Identificacion — agregamos "st" al final del deviceId para Suntech
+    // Identificacion — sufijo "st" identifica dispositivos Suntech
     unidadId:           `${f[1]?.trim()}st`,
 
     // Fechas
@@ -86,7 +104,7 @@ function buildDocument(fields, remoteInfo) {
     satelites:          parseInt(f[17]?.trim())   || null,
     fix:                f[18]?.trim() === '1',
 
-    // Conexion — la IP y puerto vienen del socket UDP
+    // Conexion
     ip:                 remoteInfo.address,
     puerto:             remoteInfo.port,
     protocolo:          'UDP',
@@ -98,8 +116,9 @@ function buildDocument(fields, remoteInfo) {
     tipoReporte:        f[0]?.trim() === 'STT' ? 'GPS' : 'Alerta',
     evento:             null,
     eventoId:           null,
+    // FIX: campo unificado — HistoryPosition usa numeroSecuencias, LastPosition usa numeroSecuencia
+    // guardamos en numeroSecuencia (sin s) y el schema de History también se corrigió
     numeroSecuencia:    parseInt(f[23]?.trim())   || null,
-    numeroSecuencias:   parseInt(f[23]?.trim())   || null,
 
     // Motor y bateria
     estadoIgnicion:     (inputBits  & 1) === 1 ? 'Encendido'   : 'Apagado',
@@ -124,26 +143,20 @@ function buildDocument(fields, remoteInfo) {
     temperatura,
     humedad,
 
-    // Trama cruda completa — para el apartado de logs en el frontend
+    // Sin datos SCAN en Suntech
+    scan: null,
+
+    // Trama cruda para logs
     trama: fields.join(';'),
   };
 }
 
-// Funcion principal que guarda en las dos colecciones
-// HistoryPosition — INSERT siempre, un documento nuevo por cada senal
-// LastPosition    — UPSERT por unidadId, sobreescribe la ultima posicion
 async function saveLocation(fields, remoteInfo) {
   try {
-    // Construimos el documento a guardar
     const doc = buildDocument(fields, remoteInfo);
 
-    // Guardamos en paralelo en ambas colecciones para ser mas rapidos
     await Promise.all([
-
-      // INSERT en historial — siempre crea un documento nuevo
       HistoryPosition.create(doc),
-
-      // UPSERT en ultima posicion — crea si no existe, actualiza si existe
       LastPosition.findOneAndUpdate(
         { unidadId: doc.unidadId },
         { $set: doc },
@@ -151,10 +164,10 @@ async function saveLocation(fields, remoteInfo) {
       ),
     ]);
 
-    console.log(`  [DB] Saved → ${doc.unidadId}`);
+    console.log(`  [DB] Saved Suntech → ${doc.unidadId}`);
 
   } catch (error) {
-    console.error(`  [DB] Save error: ${error.message}`);
+    console.error(`  [DB] Suntech save error: ${error.message}`);
   }
 }
 

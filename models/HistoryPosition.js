@@ -1,43 +1,41 @@
-// Importamos mongoose para definir el schema de la coleccion
 const mongoose = require('mongoose');
 
 const historyPositionSchema = new mongoose.Schema({
 
-  // ── Identificacion 
-  unidadId:             { type: String,  required: true },
+  // ── Identificacion
+  unidadId:             { type: String, required: true },
 
-  // ── Fechas 
+  // ── Fechas
   fechaHoraUbicacion:   { type: Date },
   fechaHoraRecepcion:   { type: Date },
 
-  // ── Posicion 
+  // ── Posicion
   latitud:              { type: Number },
   longitud:             { type: Number },
   altitud:              { type: Number },
   orientacion:          { type: Number },
   velocidad:            { type: Number },
 
-  // ── Satelites y Fix 
+  // ── Satelites y Fix
   satelites:            { type: Number },
-  // fix como booleano — true = Fix OK, false = No fix
   fix:                  { type: Boolean },
 
-  // ── Conexion 
+  // ── Conexion
   ip:                   { type: String },
   puerto:               { type: Number },
   protocolo:            { type: String, enum: ['TCP', 'UDP', 'API'] },
-  // tramaTiempoReal como booleano — true = tiempo real, false = historico
   tramaTiempoReal:      { type: Boolean },
   estadoGPRS:           { type: String, enum: ['Ok', 'Sin conexion'] },
 
-  // ── Dispositivo GPS 
+  // ── Dispositivo GPS
   gpsMarca:             { type: String },
   tipoReporte:          { type: String, enum: ['GPS', 'Giro', 'Alerta'] },
   evento:               { type: String },
   eventoId:             { type: String },
-  numeroSecuencias:     { type: Number },
+  // FIX: unificado — era "numeroSecuencias" (con s), ahora igual que LastPosition
+  numeroSecuencia:      { type: Number },
 
-  // ── Motor y bateria 
+  // ── Motor y bateria
   estadoIgnicion:       { type: String, enum: ['Encendido', 'Apagado'] },
   estadoApagadoMotor:   { type: String, enum: ['Aplicado', 'No aplicado'] },
   horometro:            { type: Number },
@@ -45,7 +43,7 @@ const historyPositionSchema = new mongoose.Schema({
   voltajeBateria:       { type: Number },
   porcBateriaInterna:   { type: Number },
 
-  // ── Senal celular 
+  // ── Senal celular
   potencia:             { type: Number },
   nivelRecepcion:       { type: String, enum: ['Excelente', 'Muy bueno', 'Regular', 'Malo', 'Deficiente', 'Desconocido'] },
   idRadioBase:          { type: String },
@@ -55,45 +53,43 @@ const historyPositionSchema = new mongoose.Schema({
   mnc:                  { type: String },
   carrier:              { type: String },
 
-  // Trama cruda completa tal como llego del GPS — para el apartado de logs
-  trama: { type: String },
+  // Trama cruda
+  trama:                { type: String },
 
-  // Parametros del Scan (OBD/CAN) — solo se guardan si vienen en la trama
-  // incluye temperatura ambiente, RPM, horometro, odometro, acelerador, combustible y velocidad CAN
+  // ── Scan OBD/CAN
   scan: {
-    temperaturaAmbiente:      { type: Number },
-    rendimientoCombustible:   { type: Number },
-    odometro:                 { type: Number },
-    temperaturaAnticongelante:{ type: Number },
-    rpm:                      { type: Number },
-    horometro:                { type: Number },
-    posicionAcelerador:       { type: Number },
-    nivelCombustible:         { type: Number },
-    velocidadCAN:             { type: Number },
+    temperaturaAmbiente:       { type: Number },
+    rendimientoCombustible:    { type: Number },
+    presionAceite:             { type: Number },
+    odometro:                  { type: Number },
+    temperaturaAnticongelante: { type: Number },
+    rpm:                       { type: Number },
+    horometro:                 { type: Number },
+    posicionAcelerador:        { type: Number },
+    cargaMotor:                { type: Number },
+    nivelCombustible:          { type: Number },
+    velocidadCAN:              { type: Number },
   },
 
-  // ── Sensores embebidos 
-  // Arreglo de tanques de combustible — solo los que vienen en la trama
+  // ── Sensores Bluetooth
   combustible: [{
     tanque: { type: String, enum: ['Tanque 1', 'Tanque 2', 'Tanque 3', 'Tanque 4'] },
     valor:  { type: Number }
   }],
 
-  // Arreglo de sensores de temperatura — solo los que vienen en la trama
   temperatura: [{
     sensor: { type: String, enum: ['Temp 1', 'Temp 2', 'Temp 3', 'Temp 4'] },
     valor:  { type: Number }
   }],
 
-  // Arreglo de sensores de humedad — solo los que vienen en la trama
   humedad: [{
     sensor: { type: String, enum: ['Hum 1', 'Hum 2', 'Hum 3', 'Hum 4'] },
     valor:  { type: Number }
-  }]
+  }],
 
 }, { timestamps: true });
 
-// Indice compuesto para acelerar busquedas por unidad y fecha
+// Índice compuesto para búsquedas por unidad y fecha
 historyPositionSchema.index({ unidadId: 1, fechaHoraUbicacion: -1 });
 
 module.exports = mongoose.model('HistoryPosition', historyPositionSchema);
