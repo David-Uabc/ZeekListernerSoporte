@@ -1,7 +1,7 @@
-// index.ts — punto de entrada
+// index.ts
 import 'dotenv/config';
-import { connectDB }   from './config/database';
-import UDPListener     from './listener/UDPListener';
+import { connectDB } from './config/database';
+import UDPListener   from './listener/UDPListener';
 
 const HOST = process.env.UDP_HOST ?? '0.0.0.0';
 const PORT = parseInt(process.env.UDP_PORT ?? '5001');
