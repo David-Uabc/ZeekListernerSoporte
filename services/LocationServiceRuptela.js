@@ -63,8 +63,8 @@ function parseIOIDs(buf, offset) {
   return { ios, offset };
 }
 
-// ─── Sensores Bluetooth 
-// Función genérica — reemplaza parseFuel, parseTemperature y parseHumidity
+//  Sensores Bluetooth 
+// Función genérica  reemplaza parseFuel, parseTemperature y parseHumidity
 // Recibe la tabla de sensores, un validador y un conversor
 // Devuelve solo los sensores con lectura dentro del rango físico válido
 function parseBTSensors(ios, sensors, isValidFn, convertFn) {
