@@ -4,13 +4,84 @@ import type { RemoteInfo } from '../types';
 import * as SuntechParser  from '../services/LocationService';
 import * as RuptelaParser  from '../services/LocationServiceRuptela';
 
-// Tabla de parsers — agregar una marca nueva = una línea aquí
 const PARSERS: Record<string, { saveLocation: (data: any, remote: RemoteInfo) => Promise<void> }> = {
   STUniversal: SuntechParser,
   Ruptela:     RuptelaParser,
 };
 
-// ─── MessageQueue 
+// ─── Configuración del batch ──────────────────────────────────────────────────
+const BATCH_SIZE     = 50;    // guarda cada 50 documentos
+const FLUSH_INTERVAL = 5000;  // o cada 5 segundos, lo que ocurra primero
+
+// ─── Documento pendiente ──────────────────────────────────────────────────────
+interface PendingDoc {
+  tipoEquipo: string;
+  datos:      string | string[];
+  remoteInfo: RemoteInfo;
+}
+
+// ─── BatchBuffer ──────────────────────────────────────────────────────────────
+// Acumula documentos y dispara el guardado cuando:
+//   a) El buffer llega a BATCH_SIZE (50 docs)
+//   b) Pasan FLUSH_INTERVAL ms sin llegar a 50
+
+class BatchBuffer {
+  private buffer: PendingDoc[]       = [];
+  private timer:  NodeJS.Timeout | null = null;
+
+  add(doc: PendingDoc): void {
+    this.buffer.push(doc);
+
+    // Arrancamos el timer solo con el primer documento del batch
+    if (this.buffer.length === 1) {
+      this.timer = setTimeout(() => this._flush('timer'), FLUSH_INTERVAL);
+    }
+
+    // Cuando llegamos exactamente a BATCH_SIZE disparamos inmediatamente
+    if (this.buffer.length >= BATCH_SIZE) {
+      this._flush('size');
+    }
+  }
+
+  private _flush(reason: 'size' | 'timer'): void {
+    // Cancelamos el timer si el flush fue por tamaño
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+
+    // Si no hay nada que guardar salimos
+    if (this.buffer.length === 0) return;
+
+    // Tomamos exactamente lo que hay y limpiamos el buffer
+    // Los documentos que lleguen después irán al siguiente batch
+    const batch = this.buffer.splice(0, this.buffer.length);
+
+    console.log(`  [BATCH] Flushing ${batch.length} docs — reason: ${reason}`);
+
+    // Guardamos en paralelo con allSettled para que un error
+    // no cancele el resto del batch
+    Promise.allSettled(
+      batch.map(item =>
+        PARSERS[item.tipoEquipo].saveLocation(item.datos, item.remoteInfo)
+      )
+    ).then(results => {
+      const errors = results.filter(r => r.status === 'rejected').length;
+      if (errors > 0) {
+        console.error(`  [BATCH] ${errors}/${batch.length} docs failed`);
+      }
+    });
+  }
+
+  // Fuerza el guardado de lo que quede al cerrar el servidor
+  flushAll(): void {
+    this._flush('timer');
+  }
+
+  get size(): number { return this.buffer.length; }
+}
+
+// ─── MessageQueue ─────────────────────────────────────────────────────────────
 
 interface QueueItem {
   datos:      string | string[];
@@ -21,7 +92,8 @@ interface QueueItem {
 class MessageQueue {
   private queue:      QueueItem[] = [];
   private processing: boolean     = false;
-  private maxSize:    number       = 10000;
+  private maxSize:    number      = 50000;
+  private batch:      BatchBuffer = new BatchBuffer();
 
   enqueue(item: QueueItem): void {
     if (this.queue.length >= this.maxSize) {
@@ -32,23 +104,25 @@ class MessageQueue {
     if (!this.processing) this._processNext();
   }
 
-  private async _processNext(): Promise<void> {
+  private _processNext(): void {
     if (this.queue.length === 0) {
       this.processing = false;
       return;
     }
     this.processing = true;
     const item = this.queue.shift()!;
-    try {
-      await PARSERS[item.tipoEquipo].saveLocation(item.datos, item.remoteInfo);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.error(`  [QUEUE] Processing error: ${msg}`);
-    }
+    this.batch.add({
+      tipoEquipo: item.tipoEquipo,
+      datos:      item.datos,
+      remoteInfo: item.remoteInfo,
+    });
     setImmediate(() => this._processNext());
   }
 
-  get size(): number { return this.queue.length; }
+  flushAll(): void { this.batch.flushAll(); }
+
+  get size():      number { return this.queue.length; }
+  get batchSize(): number { return this.batch.size; }
 }
 
 // ─── UDPListener ─────────────────────────────────────────────────────────────
@@ -57,10 +131,10 @@ export default class UDPListener {
   private host:            string;
   private port:            number;
   private socket:          dgram.Socket;
-  private messageCount:    number  = 0;
-  private lastFrame:       string  = '';
-  private lastFrameTime:   number  = 0;
-  private duplicateWindow: number  = 2000;
+  private messageCount:    number       = 0;
+  private lastFrame:       string       = '';
+  private lastFrameTime:   number       = 0;
+  private duplicateWindow: number       = 2000;
   private queue:           MessageQueue;
 
   constructor(host: string, port: number) {
@@ -85,7 +159,7 @@ export default class UDPListener {
       this.lastFrameTime = now;
       this.messageCount++;
 
-      console.log(`\n  MESSAGE #${this.messageCount} | Queue: ${this.queue.size} waiting`);
+      console.log(`\n  MESSAGE #${this.messageCount} | Queue: ${this.queue.size} | Batch: ${this.queue.batchSize}`);
       console.log(`  Time : ${new Date().toLocaleString('es-MX')}`);
       console.log(`  From : ${remoteInfo.address}:${remoteInfo.port} | Size: ${msg.length} bytes`);
 
@@ -102,8 +176,9 @@ export default class UDPListener {
     this.socket.on('listening', () => {
       const address = this.socket.address();
       console.log('\n  UDP LISTENER — ListenerSoporte');
-      console.log(`  Listening on : ${address.address}:${address.port}`);
-      console.log('  Queue        : Active (anti-collapse)');
+      console.log(`  Listening on  : ${address.address}:${address.port}`);
+      console.log(`  Batch size    : ${BATCH_SIZE} docs`);
+      console.log(`  Flush interval: ${FLUSH_INTERVAL / 1000}s`);
       console.log('  Waiting for GPS frames...\n');
     });
 
@@ -138,6 +213,11 @@ export default class UDPListener {
     }
   }
 
-  start(): void  { this.socket.bind(this.port, this.host); }
-  stop():  void  { this.socket.close(); }
+  stop(): void {
+    console.log('\n  [Listener] Flushing pending batch before closing...');
+    this.queue.flushAll();
+    this.socket.close();
+  }
+
+  start(): void { this.socket.bind(this.port, this.host); }
 }

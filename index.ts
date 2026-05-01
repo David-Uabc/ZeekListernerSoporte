@@ -1,10 +1,12 @@
 // index.ts — punto de entrada
 import 'dotenv/config';
-import { connectDB }   from './config/database';
-import UDPListener     from './listener/UDPListener';
+import { connectDB }  from './config/database';
+import UDPListener    from './listener/UDPListener';
+import TCPListener    from './listener/TCPListener';
 
-const HOST = process.env.UDP_HOST ?? '0.0.0.0';
-const PORT = parseInt(process.env.UDP_PORT ?? '5001');
+const HOST     = process.env.UDP_HOST  ?? '0.0.0.0';
+const UDP_PORT = parseInt(process.env.UDP_PORT ?? '5001');
+const TCP_PORT = parseInt(process.env.TCP_PORT ?? '5002');
 
 async function main(): Promise<void> {
   console.log('\n  ListenerSoporte — IoT GPS');
@@ -12,12 +14,18 @@ async function main(): Promise<void> {
 
   await connectDB();
 
-  const listener = new UDPListener(HOST, PORT);
-  listener.start();
+  // Arrancamos ambos listeners en paralelo
+  const udpListener = new UDPListener(HOST, UDP_PORT);
+  const tcpListener = new TCPListener(HOST, TCP_PORT);
 
+  udpListener.start();
+  tcpListener.start();
+
+  // Cierre limpio — vaciamos batch UDP y cerramos conexiones TCP
   process.on('SIGINT', () => {
     console.log('\n  [Server] Stopping...');
-    listener.stop();
+    udpListener.stop();
+    tcpListener.stop();
     process.exit(0);
   });
 }
