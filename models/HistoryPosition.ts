@@ -1,10 +1,10 @@
 // models/HistoryPosition.ts
 import mongoose, { Schema, Document } from 'mongoose';
-import type { GpsDocument } from '../types';
+import type { DocumentoGps } from '../types';
 
-export type HistoryPositionDoc = GpsDocument & Document;
+export type DocumentoHistorialPos = DocumentoGps & Document;
 
-const historyPositionSchema = new Schema<HistoryPositionDoc>(
+const esquemaHistorialPos = new Schema<DocumentoHistorialPos>(
   {
     unidadId:           { type: String, required: true },
 
@@ -71,6 +71,6 @@ const historyPositionSchema = new Schema<HistoryPositionDoc>(
   { timestamps: true },
 );
 
-historyPositionSchema.index({ unidadId: 1, fechaHoraUbicacion: -1 });
+esquemaHistorialPos.index({ unidadId: 1, fechaHoraUbicacion: -1 });
 
-export const HistoryPosition = mongoose.model<HistoryPositionDoc>('HistoryPosition', historyPositionSchema);
+export const HistoryPosition = mongoose.model<DocumentoHistorialPos>('HistoryPosition', esquemaHistorialPos);

@@ -1,203 +1,202 @@
-// listener/UDPListener.ts
+﻿// listener/UDPListener.ts
 import dgram from 'dgram';
-import type { RemoteInfo } from '../types';
-import * as SuntechParser  from '../services/LocationService';
-import * as RuptelaParser  from '../services/LocationServiceRuptela';
+import type { InfoRemota } from '../types';
+import * as SuntechParser  from '../services/LocationServiceSuntechUDP';
+import * as RuptelaParser  from '../services/LocationServiceRuptelaUDP';
 
-const PARSERS: Record<string, { saveLocation: (data: any, remote: RemoteInfo) => Promise<void> }> = {
+const ANALIZADORES: Record<string, { guardarUbicacion: (datos: any, infoRemota: InfoRemota) => Promise<void> }> = {
   STUniversal: SuntechParser,
   Ruptela:     RuptelaParser,
 };
 
-// ─── Configuración del batch ──────────────────────────────────────────────────
-const BATCH_SIZE     = 50;    // guarda cada 50 documentos
-const FLUSH_INTERVAL = 5000;  // o cada 5 segundos, lo que ocurra primero
+// --- Configuración del lote --------------------------------------------------
+const TAMANO_LOTE       = 50;    // guarda cada 50 documentos
+const INTERVALO_VACIADO = 5000;  // o cada 5 segundos, lo que ocurra primero
 
-// ─── Documento pendiente ──────────────────────────────────────────────────────
-interface PendingDoc {
+// --- Documento pendiente -----------------------------------------------------
+interface DocumentoPendiente {
   tipoEquipo: string;
   datos:      string | string[];
-  remoteInfo: RemoteInfo;
+  infoRemota: InfoRemota;
 }
 
-// ─── BatchBuffer ──────────────────────────────────────────────────────────────
+// --- BufferLote --------------------------------------------------------------
 // Acumula documentos y dispara el guardado cuando:
-//   a) El buffer llega a BATCH_SIZE (50 docs)
-//   b) Pasan FLUSH_INTERVAL ms sin llegar a 50
+//   a) El buffer llega a TAMANO_LOTE (50 docs)
+//   b) Pasan INTERVALO_VACIADO ms sin llegar a 50
 
-class BatchBuffer {
-  private buffer: PendingDoc[]       = [];
-  private timer:  NodeJS.Timeout | null = null;
+class BufferLote {
+  private buffer:       DocumentoPendiente[]   = [];
+  private temporizador: NodeJS.Timeout | null  = null;
 
-  add(doc: PendingDoc): void {
+  agregar(doc: DocumentoPendiente): void {
     this.buffer.push(doc);
 
-    // Arrancamos el timer solo con el primer documento del batch
+    // Arrancamos el temporizador solo con el primer documento del lote
     if (this.buffer.length === 1) {
-      this.timer = setTimeout(() => this._flush('timer'), FLUSH_INTERVAL);
+      this.temporizador = setTimeout(() => this._vaciar('temporizador'), INTERVALO_VACIADO);
     }
 
-    // Cuando llegamos exactamente a BATCH_SIZE disparamos inmediatamente
-    if (this.buffer.length >= BATCH_SIZE) {
-      this._flush('size');
+    // Cuando llegamos exactamente a TAMANO_LOTE disparamos inmediatamente
+    if (this.buffer.length >= TAMANO_LOTE) {
+      this._vaciar('tamano');
     }
   }
 
-  private _flush(reason: 'size' | 'timer'): void {
-    // Cancelamos el timer si el flush fue por tamaño
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
+  private _vaciar(motivo: 'tamano' | 'temporizador'): void {
+    // Cancelamos el temporizador si el guardado fue por tamaño
+    if (this.temporizador) {
+      clearTimeout(this.temporizador);
+      this.temporizador = null;
     }
 
     // Si no hay nada que guardar salimos
     if (this.buffer.length === 0) return;
 
     // Tomamos exactamente lo que hay y limpiamos el buffer
-    // Los documentos que lleguen después irán al siguiente batch
-    const batch = this.buffer.splice(0, this.buffer.length);
+    const lote = this.buffer.splice(0, this.buffer.length);
 
-    console.log(`  [BATCH] Flushing ${batch.length} docs — reason: ${reason}`);
+    console.log(`  [LOTE] Guardando ${lote.length} docs — motivo: ${motivo}`);
 
     // Guardamos en paralelo con allSettled para que un error
-    // no cancele el resto del batch
+    // no cancele el resto del lote
     Promise.allSettled(
-      batch.map(item =>
-        PARSERS[item.tipoEquipo].saveLocation(item.datos, item.remoteInfo)
+      lote.map(elemento =>
+        ANALIZADORES[elemento.tipoEquipo].guardarUbicacion(elemento.datos, elemento.infoRemota)
       )
-    ).then(results => {
-      const errors = results.filter(r => r.status === 'rejected').length;
-      if (errors > 0) {
-        console.error(`  [BATCH] ${errors}/${batch.length} docs failed`);
+    ).then(resultados => {
+      const errores = resultados.filter(r => r.status === 'rejected').length;
+      if (errores > 0) {
+        console.error(`  [LOTE] ${errores}/${lote.length} docs fallaron`);
       }
     });
   }
 
   // Fuerza el guardado de lo que quede al cerrar el servidor
-  flushAll(): void {
-    this._flush('timer');
+  vaciarTodo(): void {
+    this._vaciar('temporizador');
   }
 
-  get size(): number { return this.buffer.length; }
+  get tamano(): number { return this.buffer.length; }
 }
 
-// ─── MessageQueue ─────────────────────────────────────────────────────────────
+// --- ColaMensajes -------------------------------------------------------------
 
-interface QueueItem {
+interface ElementoCola {
   datos:      string | string[];
-  remoteInfo: RemoteInfo;
+  infoRemota: InfoRemota;
   tipoEquipo: string;
 }
 
-class MessageQueue {
-  private queue:      QueueItem[] = [];
-  private processing: boolean     = false;
-  private maxSize:    number      = 50000;
-  private batch:      BatchBuffer = new BatchBuffer();
+class ColaMensajes {
+  private cola:       ElementoCola[] = [];
+  private procesando: boolean        = false;
+  private tamanoMax:  number         = 50000;
+  private lote:       BufferLote     = new BufferLote();
 
-  enqueue(item: QueueItem): void {
-    if (this.queue.length >= this.maxSize) {
-      this.queue.shift();
-      console.warn('  [QUEUE] Max size reached — oldest message discarded');
+  encolar(elemento: ElementoCola): void {
+    if (this.cola.length >= this.tamanoMax) {
+      this.cola.shift();
+      console.warn('  [COLA] Tamaño máximo alcanzado — se descartó el mensaje más antiguo');
     }
-    this.queue.push(item);
-    if (!this.processing) this._processNext();
+    this.cola.push(elemento);
+    if (!this.procesando) this._procesarSiguiente();
   }
 
-  private _processNext(): void {
-    if (this.queue.length === 0) {
-      this.processing = false;
+  private _procesarSiguiente(): void {
+    if (this.cola.length === 0) {
+      this.procesando = false;
       return;
     }
-    this.processing = true;
-    const item = this.queue.shift()!;
-    this.batch.add({
-      tipoEquipo: item.tipoEquipo,
-      datos:      item.datos,
-      remoteInfo: item.remoteInfo,
+    this.procesando = true;
+    const elemento = this.cola.shift()!;
+    this.lote.agregar({
+      tipoEquipo: elemento.tipoEquipo,
+      datos:      elemento.datos,
+      infoRemota: elemento.infoRemota,
     });
-    setImmediate(() => this._processNext());
+    setImmediate(() => this._procesarSiguiente());
   }
 
-  flushAll(): void { this.batch.flushAll(); }
+  vaciarTodo(): void { this.lote.vaciarTodo(); }
 
-  get size():      number { return this.queue.length; }
-  get batchSize(): number { return this.batch.size; }
+  get tamano():     number { return this.cola.length; }
+  get tamanoLote(): number { return this.lote.tamano; }
 }
 
-// ─── UDPListener ─────────────────────────────────────────────────────────────
+// --- EscuchadorUDP -----------------------------------------------------------
 
-export default class UDPListener {
-  private host:            string;
-  private port:            number;
-  private socket:          dgram.Socket;
-  private messageCount:    number       = 0;
-  private lastFrame:       string       = '';
-  private lastFrameTime:   number       = 0;
-  private duplicateWindow: number       = 2000;
-  private queue:           MessageQueue;
+export default class EscuchadorUDP {
+  private host:              string;
+  private puerto:            number;
+  private socket:            dgram.Socket;
+  private contadorMensajes:  number       = 0;
+  private ultimaTrama:       string       = '';
+  private tiempoUltimaTrama: number       = 0;
+  private ventanaDuplicados: number       = 2000;
+  private cola:              ColaMensajes;
 
-  constructor(host: string, port: number) {
+  constructor(host: string, puerto: number) {
     this.host   = host;
-    this.port   = port;
+    this.puerto = puerto;
     this.socket = dgram.createSocket('udp4');
-    this.queue  = new MessageQueue();
-    this._bindEvents();
+    this.cola   = new ColaMensajes();
+    this._vincularEventos();
   }
 
-  private _bindEvents(): void {
+  private _vincularEventos(): void {
 
-    this.socket.on('message', (msg: Buffer, remoteInfo: RemoteInfo) => {
-      const rawMessage = msg.toString();
-      const now        = Date.now();
+    this.socket.on('message', (msg: Buffer, infoRemota: InfoRemota) => {
+      const mensajeCrudo = msg.toString();
+      const ahora        = Date.now();
 
-      const isDuplicate = rawMessage === this.lastFrame
-        && (now - this.lastFrameTime) < this.duplicateWindow;
-      if (isDuplicate) return;
+      const esDuplicado = mensajeCrudo === this.ultimaTrama
+        && (ahora - this.tiempoUltimaTrama) < this.ventanaDuplicados;
+      if (esDuplicado) return;
 
-      this.lastFrame     = rawMessage;
-      this.lastFrameTime = now;
-      this.messageCount++;
+      this.ultimaTrama       = mensajeCrudo;
+      this.tiempoUltimaTrama = ahora;
+      this.contadorMensajes++;
 
-      console.log(`\n  MESSAGE #${this.messageCount} | Queue: ${this.queue.size} | Batch: ${this.queue.batchSize}`);
-      console.log(`  Time : ${new Date().toLocaleString('es-MX')}`);
-      console.log(`  From : ${remoteInfo.address}:${remoteInfo.port} | Size: ${msg.length} bytes`);
+      console.log(`\n  MENSAJE #${this.contadorMensajes} | Cola: ${this.cola.tamano} | Lote: ${this.cola.tamanoLote}`);
+      console.log(`  Hora : ${new Date().toLocaleString('es-MX')}`);
+      console.log(`  Desde: ${infoRemota.address}:${infoRemota.port} | Tamaño: ${msg.length} bytes`);
 
-      const parsed = this._parseFrame(rawMessage);
-      if (!parsed) return;
+      const analizado = this._analizarTrama(mensajeCrudo);
+      if (!analizado) return;
 
-      if (PARSERS[parsed.marca]) {
-        this.queue.enqueue({ datos: parsed.datos, remoteInfo, tipoEquipo: parsed.marca });
+      if (ANALIZADORES[analizado.marca]) {
+        this.cola.encolar({ datos: analizado.datos, infoRemota, tipoEquipo: analizado.marca });
       } else {
-        console.warn(`  [WARN] Marca desconocida: ${parsed.marca}`);
+        console.warn(`  [WARN] Marca desconocida: ${analizado.marca}`);
       }
     });
 
     this.socket.on('listening', () => {
-      const address = this.socket.address();
-      console.log('\n  UDP LISTENER — ListenerSoporte');
-      console.log(`  Listening on  : ${address.address}:${address.port}`);
-      console.log(`  Batch size    : ${BATCH_SIZE} docs`);
-      console.log(`  Flush interval: ${FLUSH_INTERVAL / 1000}s`);
-      console.log('  Waiting for GPS frames...\n');
+      const direccion = this.socket.address();
+      console.log('\n  ESCUCHADOR UDP — ListenerSoporte');
+      console.log(`  Escuchando en  : ${direccion.address}:${direccion.port}`);
+      console.log(`  Tamaño de lote : ${TAMANO_LOTE} docs`);
+      console.log(`  Intervalo      : ${INTERVALO_VACIADO / 1000}s`);
+      console.log('  Esperando tramas GPS...\n');
     });
 
     this.socket.on('error', (error: Error) => {
       console.error(`\n[ERROR] ${error.message}`);
       if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') {
-        console.error(`[ERROR] Port ${this.port} is already in use.`);
+        console.error(`[ERROR] El puerto ${this.puerto} ya está en uso.`);
       }
       this.socket.close();
     });
 
-    this.socket.on('close', () => console.log('\n[Listener] Socket closed.'));
+    this.socket.on('close', () => console.log('\n[Escuchador] Conexión cerrada.'));
   }
 
-  private _parseFrame(rawMessage: string): { marca: string; datos: string | string[] } | null {
+  private _analizarTrama(mensajeCrudo: string): { marca: string; datos: string | string[] } | null {
     try {
-      const json = JSON.parse(rawMessage);
+      const json = JSON.parse(mensajeCrudo);
       if (!json.Trama) {
-        console.warn('  [WARN] JSON received but "Trama" field is missing.');
+        console.warn('  [WARN] JSON recibido pero falta el campo "Trama".');
         return null;
       }
       const marca = json.Identificar ?? 'STUniversal';
@@ -208,16 +207,16 @@ export default class UDPListener {
     } catch {
       return {
         marca: 'STUniversal',
-        datos: rawMessage.trim().split(';'),
+        datos: mensajeCrudo.trim().split(';'),
       };
     }
   }
 
-  stop(): void {
-    console.log('\n  [Listener] Flushing pending batch before closing...');
-    this.queue.flushAll();
+  detener(): void {
+    console.log('\n  [Escuchador] Guardando lote pendiente antes de cerrar...');
+    this.cola.vaciarTodo();
     this.socket.close();
   }
 
-  start(): void { this.socket.bind(this.port, this.host); }
+  iniciar(): void { this.socket.bind(this.puerto, this.host); }
 }

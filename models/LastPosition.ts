@@ -1,10 +1,10 @@
 // models/LastPosition.ts
 import mongoose, { Schema, Document } from 'mongoose';
-import type { GpsDocument } from '../types';
+import type { DocumentoGps } from '../types';
 
-export type LastPositionDoc = GpsDocument & Document;
+export type DocumentoUltimaPos = DocumentoGps & Document;
 
-const lastPositionSchema = new Schema<LastPositionDoc>(
+const esquemaUltimaPos = new Schema<DocumentoUltimaPos>(
   {
     unidadId:           { type: String, required: true, unique: true },
 
@@ -59,4 +59,4 @@ const lastPositionSchema = new Schema<LastPositionDoc>(
   { timestamps: true },
 );
 
-export const LastPosition = mongoose.model<LastPositionDoc>('LastPosition', lastPositionSchema);
+export const LastPosition = mongoose.model<DocumentoUltimaPos>('LastPosition', esquemaUltimaPos);

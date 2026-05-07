@@ -1,28 +1,36 @@
-// index.ts
+﻿// index.ts — punto de entrada
 import 'dotenv/config';
-import { connectDB } from './config/database';
-import UDPListener   from './listener/UDPListener';
+import { conectarBD }  from './config/database';
+import EscuchadorUDP   from './listener/UDPListener';
+import EscuchadorTCP   from './listener/TCPListener';
 
-const HOST = process.env.UDP_HOST ?? '0.0.0.0';
-const PORT = parseInt(process.env.UDP_PORT ?? '5001');
+const HOST       = process.env.UDP_HOST  ?? '0.0.0.0';
+const PUERTO_UDP = parseInt(process.env.UDP_PORT ?? '5001');
+const PUERTO_TCP = parseInt(process.env.TCP_PORT ?? '5002');
 
-async function main(): Promise<void> {
+async function principal(): Promise<void> {
   console.log('\n  ListenerSoporte — IoT GPS');
-  console.log('  ─────────────────────────────────────────');
+  console.log('  -----------------------------------------');
 
-  await connectDB();
+  await conectarBD();
 
-  const listener = new UDPListener(HOST, PORT);
-  listener.start();
+  // Arrancamos ambos escuchadores en paralelo
+  const escuchadorUDP = new EscuchadorUDP(HOST, PUERTO_UDP);
+  const escuchadorTCP = new EscuchadorTCP(HOST, PUERTO_TCP);
 
+  escuchadorUDP.iniciar();
+  escuchadorTCP.iniciar();
+
+  // Cierre limpio — vaciamos lote UDP y cerramos conexiones TCP
   process.on('SIGINT', () => {
-    console.log('\n  [Server] Stopping...');
-    listener.stop();
+    console.log('\n  [Servidor] Deteniendo...');
+    escuchadorUDP.detener();
+    escuchadorTCP.detener();
     process.exit(0);
   });
 }
 
-main().catch(err => {
-  console.error('\n[FATAL]', err instanceof Error ? err.message : err);
+principal().catch(error => {
+  console.error('\n[FATAL]', error instanceof Error ? error.message : error);
   process.exit(1);
 });
