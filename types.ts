@@ -1,11 +1,11 @@
 // types.ts — interfaces compartidas entre todos los módulos
 
-export interface RemoteInfo {
-  address: string;
-  port:    number;
+export interface InfoRemota {
+  address: string;  // propiedad de la API de Node.js — no se traduce
+  port:    number;  // propiedad de la API de Node.js — no se traduce
 }
 
-export interface GpsDocument {
+export interface DocumentoGps {
   unidadId:           string;
 
   fechaHoraUbicacion: Date | null;
@@ -48,19 +48,19 @@ export interface GpsDocument {
   mnc:                string | null;
   carrier:            string | null;
 
-  combustible:        FuelReading[];
-  temperatura:        TempReading[];
-  humedad:            HumReading[];
-  scan:               ScanData | null;
+  combustible:        LecturaCombustible[];
+  temperatura:        LecturaTemperatura[];
+  humedad:            LecturaHumedad[];
+  scan:               DatosEscaneo | null;
 
   trama:              string;
 }
 
-export interface FuelReading { tanque: string; valor: number; }
-export interface TempReading { sensor: string; valor: number; }
-export interface HumReading  { sensor: string; valor: number; }
+export interface LecturaCombustible { tanque: string; valor: number; }
+export interface LecturaTemperatura { sensor: string; valor: number; }
+export interface LecturaHumedad     { sensor: string; valor: number; }
 
-export interface ScanData {
+export interface DatosEscaneo {
   temperaturaAmbiente?:       number;
   rendimientoCombustible?:    number;
   presionAceite?:             number;
@@ -74,16 +74,16 @@ export interface ScanData {
   velocidadCAN?:              number;
 }
 
-export type IOsMap = Record<number, number | string>;
+export type MapaIOs = Record<number, number | string>;
 
-export interface BTSensorDef<L extends object> {
+export interface DefSensorBT<E extends object> {
   ioid:  number;
-  label: L;
+  label: E;      // nombre del campo del protocolo Ruptela — no se traduce
 }
 
-export interface ScanIoidDef {
+export interface DefIoidEscaneo {
   ioid:    number;
-  campo:   keyof ScanData;
-  isError: (v: number) => boolean;
-  factor:  (v: number) => number;
+  campo:   keyof DatosEscaneo;
+  isError: (v: number) => boolean;  // nombre del campo del protocolo — no se traduce
+  factor:  (v: number) => number;   // nombre del campo del protocolo — no se traduce
 }
